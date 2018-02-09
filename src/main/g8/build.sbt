@@ -1,6 +1,8 @@
 // Define versions for libraries:
 val VersionCats       = "$versionCats$"
 val VersionCatsEffect = "$versionCatsEffect$"
+val VersionFansi      = "$versionFansi$"
+val VersionScallop    = "$versionScallop$"
 
 
 // Configure the root project:
@@ -24,5 +26,7 @@ lazy val root = (project in file("."))
     libraryDependencies ++= Seq(
       "org.typelevel" %% "cats-core"   % VersionCats,
       "org.typelevel" %% "cats-effect" % VersionCatsEffect,
+      "com.lihaoyi"   %% "fansi"       % VersionFansi,
+      "org.rogach"    %% "scallop"     % VersionScallop,
     )
   )

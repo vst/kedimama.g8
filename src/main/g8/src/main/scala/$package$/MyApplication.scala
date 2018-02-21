@@ -2,12 +2,13 @@ package $package$
 
 import cats.effect.{Effect, IO}
 import cats.implicits._
-import org.rogach.scallop.{ScallopConf, Subcommand}
+import org.rogach.scallop.{ScallopConf, ScallopConfBase, Subcommand}
 
 import scala.language.higherKinds
 
+
 /**
-  * Provides an abstract class extending the [[App]] to fascilitate convenience when writing `tagree` applications.
+  * Provides an abstract class extending the [[App]] to facilitate convenience when writing `tagree` applications.
   */
 abstract class Application extends App {
   /**
@@ -23,9 +24,9 @@ abstract class Application extends App {
   def run(): Unit = {
     // Run the program, handle the return value and exit accordingly:
     program.attempt.unsafeRunSync match {
-      case Left(error) => exitOnError(new Throwable("Unexpected error occured. Reach out the programmer!", error))
+      case Left(error) => exitOnError(new Throwable("Unexpected error occurred. Reach out the programmer!", error), 2)
       case Right(rets) => rets match {
-        case Left(error) => exitOnError(error)
+        case Left(error) => exitOnError(error, 1)
         case Right(code) => exitWithCode(code)
       }
     }
@@ -43,7 +44,7 @@ abstract class Application extends App {
     *
     * @param error Error message caught.
     */
-  protected def exitOnError(error: Throwable): Unit = {
+  protected def exitOnError(error: Throwable, code: Int): Unit = {
     // Print the stack trace:
     error.printStackTrace()
 
@@ -51,7 +52,7 @@ abstract class Application extends App {
     Console.err.println(s"\${error.getMessage}\nExiting...")
 
     // Exit the application:
-    exitWithCode(1)
+    exitWithCode(code)
   }
 
   // Call run:
@@ -60,34 +61,32 @@ abstract class Application extends App {
 
 
 /**
-  * Defines a tagless-free program template.
-  *
-  * @tparam M [[Effect]] type.
-  */
-trait Program [M[_]] {
-  /**
-    * Instructions to be run.
-    *
-    * @return An [[cats.effect.Effect]] of [[Either]] a [[Throwable]] in failure, or [[Int]] as exit code otherwise.
-    */
-  def instructions: M[Either[Throwable, Int]]
-}
-
-
-/**
   * Provides a trait for standardising the preparation of programs.
   *
-  * This is quite useful if we have relatively tedious steps to prepare program instances, such as interpreting
-  * command line arguments and options, picking the right program instance for a given algebra, etc...
+  * This is quite useful if we have relatively tedious steps to
+  * prepare program instances, such as interpreting command line
+  * arguments and options, picking the right program instance for a
+  * given algebra, etc...
+  *
+  * @tparam M Type parameter for the effect.
   */
-trait Compiler {
+trait Program[M[_]] { this: ScallopConf =>
+  /**
+    * Returns the purpose of the program.
+    *
+    * @return The purpose of the program.
+    */
+  def purpose: String
+
   /**
     * Compiles and returns the program to be executed eventually.
     *
-    * @tparam M Parameter for the [[Effect]] type.
     * @return The program to be executed.
     */
-  def compile[M[_] : Effect]: Program[M]
+  def compile: M[Either[Throwable, Int]]
+
+  // Set the banner:
+  banner(purpose)
 }
 
 
@@ -97,8 +96,20 @@ trait Compiler {
   * @param M Parameter for the [[Effect]] type, evidence for [[M]].
   * @tparam M [[Effect]] type.
   */
-class DoSomethingProgram[M[_] : Effect]()(implicit M : Effect[M]) extends Program[M] {
-  override def instructions: M[Either[Throwable, Int]] = M.delay({
+class DoSomethingProgram[M[_]](command: String)(implicit M : Effect[M]) extends Subcommand(command) with Program[M] {
+    /**
+    * Returns the purpose of the program.
+    *
+    * @return The purpose of the program.
+    */
+  override def purpose: String = "List remote folders"
+
+  /**
+    * Compiles and returns the program to be executed eventually.
+    *
+    * @return The program to be executed.
+    */
+  override def compile: M[Either[Throwable, Int]] = M.delay({
     // Do your stuff:
     println("What am I doing here?")
 
@@ -107,28 +118,13 @@ class DoSomethingProgram[M[_] : Effect]()(implicit M : Effect[M]) extends Progra
   })
 }
 
-/**
-  * Provides a program compiler for the dummy "do-something" command.
-  */
-trait DoSomethingProgramCompiler extends Compiler { this: Subcommand =>
-  // Define the banner for the sub-command:
-  banner("Does something dummy")
-
-  /**
-    * Compiles and returns the program to be executed eventually.
-    *
-    * @tparam M Parameter for the [[Effect]] type.
-    * @return The program to be executed.
-    */
-  override def compile[M[_] : Effect]: Program[M] = new DoSomethingProgram
-}
 
 /**
   * Provides the command line arguments and options parser.
   *
   * @param arguments List of strings, possibly arguments consumed directly from the command line.
   */
-class CLIConf(arguments: Seq[String]) extends ScallopConf(arguments) {
+class CLIConf[M[_]](arguments: Seq[String])(implicit M : Effect[M]) extends ScallopConf(arguments) {
   // Define the version:
   version(s"\${BuildInfo.name} / v\${BuildInfo.version} / Copyright (c) $copyright_year$ $author_name$ <$author_mail$>")
 
@@ -138,11 +134,8 @@ class CLIConf(arguments: Seq[String]) extends ScallopConf(arguments) {
   // Define the footer for additional notes for questions and feedback:
   footer("\nPlease contact the author in case you have any questions of feedback.")
 
-  // Define subcommands:
-  val doSomething = new Subcommand("do-something") with DoSomethingProgramCompiler
-
-  // Add subcommands:
-  addSubcommand(doSomething)
+  // Add sub-commands:
+  addSubcommand(new DoSomethingProgram[M]("do-something"))
 
   // Done, let's verify:
   verify()
@@ -150,7 +143,7 @@ class CLIConf(arguments: Seq[String]) extends ScallopConf(arguments) {
 
 
 /**
-  * Provides the companion object to [[CLIConf]] for convenince.
+  * Provides the companion object to [[CLIConf]] for convenience.
   */
 object CLIConf {
   /**
@@ -168,7 +161,7 @@ object CLIConf {
     conf.subcommand match {
       case None => new Throwable("No command provided. Consider running with --help flag.").asLeft[Int].pure[M]
       case Some(cmd) => cmd match {
-        case c if c.equals(conf.doSomething) => conf.doSomething.compile[M].instructions
+        case x: ScallopConfBase with Program[M @unchecked] => x.compile
         case _ => new Throwable("Not implemented. What a pitty!").asLeft[Int].pure[M]
       }
     }

@@ -1,7 +1,7 @@
 package $package$
 
-import cats.effect.{Effect, IO}
-import $package$.cli.{Application, CLIConf}
+import cats.effect._
+import cats.syntax.all._
 
 import scala.language.higherKinds
 
@@ -9,11 +9,14 @@ import scala.language.higherKinds
 /**
   * Provides the application entry point.
   */
-object MyApplication extends Application {
+object MyApplication extends IOApp {
   /**
-    * Returns the program to be run.
+    * Returns an [[IO]] program to be run.
     *
-    * @return An [[Effect]] of [[Either]] a [[Throwable]] in failure case, or [[Int]] as exit code otherwise.
+    * @param args List of command line arguments.
+    * @return An [[IO]] program returning the [[ExitCode]] after run.
     */
-  override def program: IO[Either[Throwable, Int]] = CLIConf.getProgram[IO](args)
+  def run(args: List[String]): IO[ExitCode] = {
+    (IO(println("Hello.")) *> IO(args).map(_.foreach(println))).as(ExitCode.Success)
+  }
 }
